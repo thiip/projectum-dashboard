@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Projectum Payroll | Neumorphic Dashboard</title>
+  
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <!-- MSAL.js for Microsoft Graph API Authentication -->
+  <script type="text/javascript" src="https://alcdn.msauth.net/browser/2.32.1/js/msal-browser.min.js"></script>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <!-- Background Animated Elements -->
+  <div class="glow glow-1"></div>
+  <div class="glow glow-2"></div>
+  <div class="glow glow-3"></div>
+
+  <div class="app-container">
+    
+    <!-- Sidebar / Header -->
+    <aside class="sidebar glass-panel">
+      <div class="brand">
+        <div class="logo">
+           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M12 2L2 7L12 12L22 7L12 2Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M2 17L12 22L22 17" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M2 12L12 17L22 12" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+           </svg>
+        </div>
+        <div>
+          <h1>Projectum</h1>
+          <p>Payroll Intelligence</p>
+        </div>
+      </div>
+      
+      <nav class="nav-menu">
+        <a href="#" class="nav-item active">
+          <span class="nav-icon">📊</span> Visão Geral
+        </a>
+        <a href="#" class="nav-item" onclick="document.getElementById('employees-section').scrollIntoView({behavior: 'smooth'})">
+          <span class="nav-icon">👥</span> Colaboradores
+        </a>
+        <a href="#" class="nav-item">
+          <span class="nav-icon">📈</span> Análises
+        </a>
+        <a href="#" class="nav-item">
+          <span class="nav-icon">⚙️</span> Configurações
+        </a>
+      </nav>
+      
+      <div class="sidebar-footer">
+        <div id="auth-section" style="padding-bottom: 12px; border-bottom: 1px solid var(--panel-border); margin-bottom: 12px;">
+           <button id="btn-login" class="chip" style="width: 100%; justify-content: center; background: rgba(79,142,247,0.15); border-color: var(--js-brand); color: #fff;">
+             <span class="nav-icon" style="font-size: 14px; margin-right: 6px;">☁️</span> Conectar OneDrive
+           </button>
+           <div id="auth-status" style="font-size: 11px; color: var(--text-muted); text-align: center; margin-top: 8px; display: none;">
+              Autenticando...
+           </div>
+        </div>
+        <div class="user-profile">
+          <img src="https://ui-avatars.com/api/?name=Admin&background=0D8ABC&color=fff" alt="User">
+          <div class="user-info">
+            <span class="user-name" id="user-display-name">Administrador</span>
+            <span class="user-role">Convidado Local</span>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main-content">
+      
+      <header class="topbar">
+        <div>
+          <h2 class="page-title">Dashboard Analítico</h2>
+          <p class="page-subtitle">Acompanhamento consolidado da folha de pagamento.</p>
+        </div>
+        
+        <div class="filters-wrap">
+          <div class="chips-container">
+            <button class="chip active" data-filter="all">Todas as Empresas</button>
+            <button class="chip js" data-filter="Just Smile">Just Smile</button>
+            <button class="chip lt" data-filter="LT Decorações">LT Decorações</button>
+          </div>
+          <div class="period-selector glass-panel">
+             <span>2026</span>
+             <select id="month-filter">
+               <option value="all">Jan + Fev</option>
+               <option value="Janeiro">Janeiro</option>
+               <option value="Fevereiro">Fevereiro</option>
+             </select>
+          </div>
+        </div>
+      </header>
+      
+      <!-- KPIs Grid -->
+      <section class="kpis-grid">
+        <div class="kpi-card glass-panel" style="--accent: var(--neon-blue);">
+          <div class="kpi-header">
+            <div class="kpi-icon">💰</div>
+            <div class="kpi-trend positive">+ Detalhes</div>
+          </div>
+          <div class="kpi-value" id="kpi-total-folha">Carregando...</div>
+          <div class="kpi-label">Total Gasto (Folha)</div>
+        </div>
+        
+        <div class="kpi-card glass-panel" style="--accent: var(--neon-purple);">
+          <div class="kpi-header">
+            <div class="kpi-icon">👥</div>
+            <div class="kpi-trend neutral">Contratos</div>
+          </div>
+          <div class="kpi-value" id="kpi-colaboradores">Carregando...</div>
+          <div class="kpi-label">Total de Registros (Ativos)</div>
+        </div>
+        
+         <div class="kpi-card glass-panel" style="--accent: var(--neon-pink);">
+          <div class="kpi-header">
+            <div class="kpi-icon">🛡️</div>
+            <div class="kpi-trend negative">Impostos</div>
+          </div>
+          <div class="kpi-value" id="kpi-encargos">Carregando...</div>
+          <div class="kpi-label">Total INSS + FGTS</div>
+        </div>
+        
+        <div class="kpi-card glass-panel" style="--accent: var(--neon-green);">
+          <div class="kpi-header">
+            <div class="kpi-icon">⛽</div>
+            <div class="kpi-trend positive">Benefícios</div>
+          </div>
+          <div class="kpi-value" id="kpi-beneficios">Carregando...</div>
+          <div class="kpi-label">Total de VTs</div>
+        </div>
+      </section>
+      
+      <!-- Charts Section -->
+      <section class="charts-section">
+        <div class="chart-card glass-panel w-60">
+          <div class="chart-header">
+            <h3>Distribuição por Empresa (Composições)</h3>
+            <div class="chart-actions">
+               <button class="icon-btn">⛶</button>
+            </div>
+          </div>
+          <div class="chart-container" style="height: 300px;">
+            <canvas id="barChart"></canvas>
+          </div>
+        </div>
+        
+        <div class="chart-card glass-panel w-40">
+           <div class="chart-header">
+            <h3>Proporção Folha vs Encargos</h3>
+          </div>
+          <div class="chart-container" style="height: 300px; display: flex; justify-content: center; align-items: center;">
+            <canvas id="doughnutChart"></canvas>
+          </div>
+        </div>
+      </section>
+      
+      <!-- Detailed Table -->
+      <section class="table-section glass-panel" id="employees-section">
+        <div class="table-header">
+          <h3>Detalhamento por Colaborador</h3>
+          
+          <div class="table-controls" style="display: flex; gap: 12px; align-items: center;">
+            <button id="btn-export" class="chip" style="background: rgba(255,255,255,0.05); border: 1px solid var(--panel-border); color: var(--text-muted);"><span class="nav-icon" style="font-size: 14px; margin-right: 6px;">📥</span> Exportar CSV</button>
+            <div class="search-box">
+              <span class="search-icon">🔍</span>
+              <input type="text" id="emp-search" placeholder="Buscar por nome ou cargo...">
+            </div>
+          </div>
+        </div>
+        
+        <div class="table-responsive">
+          <table class="data-table" id="emp-table">
+            <thead>
+              <tr>
+                <th>Nome do Colaborador</th>
+                <th>Cargo / Setor</th>
+                <th>Empresa</th>
+                <th>Mês</th>
+                <th class="text-right">Salário Base</th>
+                <th class="text-right">Benef.+Extras</th>
+                <th class="text-right">Impostos</th>
+                <th class="text-right">Custo Total</th>
+              </tr>
+            </thead>
+            <tbody id="emp-tbody">
+              <!-- Rendered via JS -->
+            </tbody>
+          </table>
+          <div id="empty-state" class="empty-state" style="display: none;">
+             Nenhum registro encontrado para estes filtros.
+          </div>
+        </div>
+      </section>
+
+      <footer class="app-footer">
+        <p>Desenvolvido para Projectum Dashboard © 2026. Design dinâmico com Glassmorphism.</p>
+      </footer>
+      
+    </main>
+  </div>
+
+  <script src="data.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
