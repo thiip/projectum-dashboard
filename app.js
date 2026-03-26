@@ -1,33 +1,63 @@
 // app.js
 
-// ─── LOGIN ───
+// ─── LOGIN (dynamic - works even with cached HTML) ───
 const APP_PASSWORD = 'Senha153045!';
 
 function initLogin() {
-  const loginScreen = document.getElementById('login-screen');
-  const appContainer = document.getElementById('app-container');
-  const pwdInput = document.getElementById('login-password');
-  const btnEnter = document.getElementById('btn-enter');
-  const loginError = document.getElementById('login-error');
-  const togglePwd = document.getElementById('toggle-password');
+  // Hide EVERYTHING on the page immediately
+  document.body.style.visibility = 'hidden';
+  document.body.style.overflow = 'hidden';
 
   // Check if already authenticated in this session
   if (sessionStorage.getItem('projectum_auth') === 'true') {
-    loginScreen.style.display = 'none';
-    appContainer.style.display = '';
+    document.body.style.visibility = '';
+    document.body.style.overflow = '';
     return true;
   }
+
+  // Dynamically create the login overlay (works even if HTML is cached without it)
+  const overlay = document.createElement('div');
+  overlay.id = 'dynamic-login';
+  overlay.innerHTML = `
+    <div style="position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;background:#0d0f17;">
+      <div style="width:380px;max-width:90vw;padding:48px 36px;border-radius:24px;background:rgba(22,25,43,0.45);border:1px solid rgba(255,255,255,0.08);backdrop-filter:blur(16px);text-align:center;animation:loginFade 0.6s ease;">
+        <div style="color:#00f0ff;margin-bottom:16px;">
+          <svg width="40" height="40" viewBox="0 0 24 24" fill="none"><path d="M12 2L2 7L12 12L22 7L12 2Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M2 17L12 22L22 17" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M2 12L12 17L22 12" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+        <h2 style="font-family:Outfit,sans-serif;font-size:28px;font-weight:700;color:#f0f2f8;margin:0 0 8px;">Projectum Payroll</h2>
+        <p style="font-size:14px;color:#8c96ae;margin:0 0 32px;">Insira a senha para acessar o dashboard</p>
+        <div style="display:flex;flex-direction:column;gap:16px;">
+          <div style="position:relative;">
+            <input type="password" id="dyn-pwd" placeholder="Senha de acesso" autocomplete="off" style="width:100%;padding:14px 48px 14px 18px;border-radius:12px;border:1px solid rgba(255,255,255,0.08);background:rgba(22,25,43,0.6);color:#f0f2f8;font-size:15px;font-family:Inter,sans-serif;outline:none;box-sizing:border-box;">
+            <button id="dyn-toggle" type="button" style="position:absolute;right:12px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;font-size:16px;opacity:0.5;">👁️</button>
+          </div>
+          <div id="dyn-error" style="display:none;color:#ff2a85;font-size:13px;text-align:left;">Senha incorreta. Tente novamente.</div>
+          <button id="dyn-enter" style="width:100%;padding:14px;border-radius:12px;border:none;background:linear-gradient(135deg,#00f0ff,#b052ff);color:#fff;font-size:16px;font-weight:600;font-family:Outfit,sans-serif;cursor:pointer;">Entrar</button>
+        </div>
+      </div>
+    </div>
+    <style>@keyframes loginFade{from{opacity:0;transform:translateY(20px) scale(0.96)}to{opacity:1;transform:translateY(0) scale(1)}}</style>
+  `;
+  document.body.appendChild(overlay);
+  overlay.style.visibility = 'visible';
+
+  const pwdInput = document.getElementById('dyn-pwd');
+  const btnEnter = document.getElementById('dyn-enter');
+  const loginError = document.getElementById('dyn-error');
+  const togglePwd = document.getElementById('dyn-toggle');
 
   function attemptLogin() {
     if (pwdInput.value === APP_PASSWORD) {
       sessionStorage.setItem('projectum_auth', 'true');
-      loginScreen.style.display = 'none';
-      appContainer.style.display = '';
+      overlay.remove();
+      document.body.style.visibility = '';
+      document.body.style.overflow = '';
       initAppAfterLogin();
     } else {
       loginError.style.display = 'block';
-      pwdInput.classList.add('shake');
-      setTimeout(() => pwdInput.classList.remove('shake'), 400);
+      pwdInput.style.animation = 'none';
+      pwdInput.offsetHeight; // trigger reflow
+      pwdInput.style.animation = 'shakeInput 0.4s ease';
     }
   }
 
@@ -42,6 +72,13 @@ function initLogin() {
     pwdInput.type = isPassword ? 'text' : 'password';
     togglePwd.textContent = isPassword ? '🙈' : '👁️';
   });
+
+  // Add shake animation style
+  const style = document.createElement('style');
+  style.textContent = '@keyframes shakeInput{0%,100%{transform:translateX(0)}20%,60%{transform:translateX(-8px)}40%,80%{transform:translateX(8px)}}';
+  document.head.appendChild(style);
+
+  setTimeout(() => pwdInput.focus(), 100);
 
   return false;
 }
