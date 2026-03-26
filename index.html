@@ -20,7 +20,30 @@
   <div class="glow glow-2"></div>
   <div class="glow glow-3"></div>
 
-  <div class="app-container">
+  <!-- Login Screen -->
+  <div id="login-screen" class="login-overlay">
+    <div class="login-card glass-panel">
+      <div class="login-logo">
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M12 2L2 7L12 12L22 7L12 2Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M2 17L12 22L22 17" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M2 12L12 17L22 12" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </div>
+      <h2 class="login-title">Projectum Payroll</h2>
+      <p class="login-subtitle">Insira a senha para acessar o dashboard</p>
+      <div class="login-form">
+        <div class="login-input-wrap">
+          <input type="password" id="login-password" class="login-input" placeholder="Senha de acesso" autocomplete="off">
+          <button id="toggle-password" class="toggle-pwd-btn" type="button">👁️</button>
+        </div>
+        <div id="login-error" class="login-error" style="display:none;">Senha incorreta. Tente novamente.</div>
+        <button id="btn-enter" class="login-btn">Entrar</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="app-container" id="app-container" style="display:none;">
     
     <!-- Sidebar / Header -->
     <aside class="sidebar glass-panel">

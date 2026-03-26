@@ -1,5 +1,51 @@
 // app.js
 
+// ─── LOGIN ───
+const APP_PASSWORD = 'Senha153045!';
+
+function initLogin() {
+  const loginScreen = document.getElementById('login-screen');
+  const appContainer = document.getElementById('app-container');
+  const pwdInput = document.getElementById('login-password');
+  const btnEnter = document.getElementById('btn-enter');
+  const loginError = document.getElementById('login-error');
+  const togglePwd = document.getElementById('toggle-password');
+
+  // Check if already authenticated in this session
+  if (sessionStorage.getItem('projectum_auth') === 'true') {
+    loginScreen.style.display = 'none';
+    appContainer.style.display = '';
+    return true;
+  }
+
+  function attemptLogin() {
+    if (pwdInput.value === APP_PASSWORD) {
+      sessionStorage.setItem('projectum_auth', 'true');
+      loginScreen.style.display = 'none';
+      appContainer.style.display = '';
+      initAppAfterLogin();
+    } else {
+      loginError.style.display = 'block';
+      pwdInput.classList.add('shake');
+      setTimeout(() => pwdInput.classList.remove('shake'), 400);
+    }
+  }
+
+  btnEnter.addEventListener('click', attemptLogin);
+  pwdInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') attemptLogin();
+    loginError.style.display = 'none';
+  });
+
+  togglePwd.addEventListener('click', () => {
+    const isPassword = pwdInput.type === 'password';
+    pwdInput.type = isPassword ? 'text' : 'password';
+    togglePwd.textContent = isPassword ? '🙈' : '👁️';
+  });
+
+  return false;
+}
+
 // ─── STATE ───
 let currentCompanyFilter = 'all';
 let currentMonthFilter = 'all';
@@ -27,9 +73,17 @@ const parseMoney = (val) => typeof val === 'number' ? val : 0;
 // ─── INIT ───
 document.addEventListener('DOMContentLoaded', async () => {
   await msalInstance.initialize();
+
+  const alreadyAuth = initLogin();
+  if (alreadyAuth) {
+    initAppAfterLogin();
+  }
+});
+
+function initAppAfterLogin() {
   initFilters();
   initAuth();
-  
+
   // Try to use cloud data if logged in, otherwise use local data.js
   const activeAccount = msalInstance.getActiveAccount();
   if (activeAccount) {
@@ -37,7 +91,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   } else {
      renderApp();
   }
-});
+}
 
 // ─── AUTH LOGIC ───
 function initAuth() {
