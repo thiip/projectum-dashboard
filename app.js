@@ -93,11 +93,19 @@ let isCloudData = false;
 const msalConfig = {
     auth: {
         clientId: '7f49a4a7-b0d6-4da6-ae59-af44e2947d40',
-        authority: 'https://login.microsoftonline.com/common'
+        authority: 'https://login.microsoftonline.com/common',
+        redirectUri: window.location.origin + window.location.pathname
+    },
+    cache: {
+        cacheLocation: 'localStorage',
+        storeAuthStateInCookie: true
     }
 };
 const msalInstance = new msal.PublicClientApplication(msalConfig);
-const loginRequest = { scopes: ["User.Read", "Files.Read"] };
+const loginRequest = { scopes: ["User.Read", "Files.Read"], loginHint: "vendas@projectum.com.br" };
+
+// Backup of local data so we can restore if cloud fetch fails
+let localDataBackup = null;
 
 // Contains charts instances
 let barChartInst = null;
@@ -118,43 +126,55 @@ document.addEventListener('DOMContentLoaded', async () => {
 });
 
 function initAppAfterLogin() {
+  // Save local data as backup before any cloud operations
+  localDataBackup = [...employeesData];
+
   initFilters();
   initAuth();
 
-  // Try to use cloud data if logged in, otherwise use local data.js
-  const activeAccount = msalInstance.getActiveAccount();
-  if (activeAccount) {
+  // Always render local data first so dashboard is never empty
+  renderApp();
+
+  // Then try to auto-connect silently if there's a cached session
+  const accounts = msalInstance.getAllAccounts();
+  if (accounts.length > 0) {
+     msalInstance.setActiveAccount(accounts[0]);
      fetchCloudData();
-  } else {
-     renderApp();
   }
 }
 
 // ─── AUTH LOGIC ───
 function initAuth() {
   const btnLogin = document.getElementById('btn-login');
-  
+
+  // Handle redirect response (if coming back from redirect login)
   msalInstance.handleRedirectPromise().then((tokenResponse) => {
       if (tokenResponse) {
           msalInstance.setActiveAccount(tokenResponse.account);
           fetchCloudData();
-      } else {
-          const currentAccounts = msalInstance.getAllAccounts();
-          if (currentAccounts && currentAccounts.length > 0) {
-              msalInstance.setActiveAccount(currentAccounts[0]);
-              fetchCloudData();
-          }
       }
-  }).catch((error) => console.error(error));
+  }).catch((error) => console.error("Redirect error:", error));
 
   btnLogin.addEventListener('click', () => {
       if (!msalInstance.getActiveAccount()) {
           msalInstance.loginPopup(loginRequest).then(response => {
               msalInstance.setActiveAccount(response.account);
               fetchCloudData();
-          }).catch(error => console.error("Login popup failed:", error));
+          }).catch(error => {
+              console.error("Login popup failed:", error);
+              const statusDiv = document.getElementById('auth-status');
+              statusDiv.style.display = 'block';
+              statusDiv.textContent = 'Falha no login. Tente novamente.';
+              statusDiv.style.color = 'var(--neon-pink)';
+          });
       } else {
-          msalInstance.logoutPopup();
+          msalInstance.logoutPopup().then(() => {
+              // Restore local data after logout
+              if (localDataBackup) window.employeesData = [...localDataBackup];
+              isCloudData = false;
+              updateAuthUI();
+              renderApp();
+          });
       }
   });
 }
@@ -182,93 +202,172 @@ async function fetchCloudData() {
     updateAuthUI();
     const statusDiv = document.getElementById('auth-status');
     statusDiv.style.display = 'block';
-    statusDiv.textContent = 'Buscando planilha no OneDrive...';
+    statusDiv.textContent = 'Conectando ao OneDrive...';
+    statusDiv.style.color = 'var(--text-muted)';
+
+    let tokenResponse;
+    try {
+        // Try silent token acquisition first (uses cached token)
+        tokenResponse = await msalInstance.acquireTokenSilent({
+            ...loginRequest,
+            account: msalInstance.getActiveAccount()
+        });
+    } catch (silentErr) {
+        console.warn("Silent token failed, trying popup:", silentErr);
+        try {
+            tokenResponse = await msalInstance.acquireTokenPopup(loginRequest);
+            msalInstance.setActiveAccount(tokenResponse.account);
+            updateAuthUI();
+        } catch (popupErr) {
+            console.error("Token acquisition failed:", popupErr);
+            statusDiv.textContent = 'Falha na autenticação. Usando dados locais.';
+            statusDiv.style.color = 'var(--neon-pink)';
+            return; // Keep current data intact
+        }
+    }
 
     try {
-        const tokenResponse = await msalInstance.acquireTokenSilent(loginRequest);
-        
-        // Find the Excel file in the root
+        statusDiv.textContent = 'Buscando planilha no OneDrive...';
+
+        // Search for the Excel file
         const searchRes = await fetch("https://graph.microsoft.com/v1.0/me/drive/root/search(q='Planilha Salários Projectum 2026')", {
             headers: { Authorization: `Bearer ${tokenResponse.accessToken}` }
         });
         const searchData = await searchRes.json();
-        const file = searchData.value.find(f => f.name.includes('.xlsx'));
-        
+        console.log("OneDrive search results:", searchData);
+
+        const file = searchData.value ? searchData.value.find(f => f.name.includes('.xlsx') || f.name.includes('.xls')) : null;
+
         if (!file) {
-            statusDiv.textContent = 'Erro: Planilha Excel não encontrada.';
-            return;
+            statusDiv.textContent = 'Planilha não encontrada no OneDrive. Usando dados locais.';
+            statusDiv.style.color = 'var(--neon-pink)';
+            console.warn("Files found:", searchData.value?.map(f => f.name));
+            return; // Keep current data intact
         }
 
-        statusDiv.textContent = 'Lendo dados da planilha...';
-        // Needs a known table or worksheet name. We'll try to read the first worksheet's usedRange.
+        statusDiv.textContent = 'Lendo planilha: ' + file.name + '...';
+
+        // Get all worksheets
         const worksheetsRes = await fetch(`https://graph.microsoft.com/v1.0/me/drive/items/${file.id}/workbook/worksheets`, {
              headers: { Authorization: `Bearer ${tokenResponse.accessToken}` }
         });
         const worksheetsData = await worksheetsRes.json();
-        
+
         if (!worksheetsData.value || worksheetsData.value.length === 0) {
             statusDiv.textContent = 'Erro: Nenhuma aba encontrada no Excel.';
+            statusDiv.style.color = 'var(--neon-pink)';
             return;
         }
-        
-        const sheetId = worksheetsData.value[0].id;
-        const rangeRes = await fetch(`https://graph.microsoft.com/v1.0/me/drive/items/${file.id}/workbook/worksheets/${sheetId}/usedRange`, {
-            headers: { Authorization: `Bearer ${tokenResponse.accessToken}` }
-        });
-        
-        const rangeData = await rangeRes.json();
-        if (rangeData.values && rangeData.values.length > 1) {
-             parseExcelToEmployees(rangeData.values);
-             isCloudData = true;
-             statusDiv.textContent = 'Conectado e Atualizado (Nuvem)';
-             statusDiv.style.color = 'var(--lt-brand)';
-             renderApp();
-        } else {
-             statusDiv.textContent = 'Erro: Planilha vazia.';
+
+        console.log("Worksheets found:", worksheetsData.value.map(s => s.name));
+
+        // Read all worksheets and combine data
+        const allRows = [];
+        let headerRow = null;
+
+        for (const sheet of worksheetsData.value) {
+            statusDiv.textContent = `Lendo aba: ${sheet.name}...`;
+            const rangeRes = await fetch(`https://graph.microsoft.com/v1.0/me/drive/items/${file.id}/workbook/worksheets/${sheet.id}/usedRange`, {
+                headers: { Authorization: `Bearer ${tokenResponse.accessToken}` }
+            });
+            const rangeData = await rangeRes.json();
+
+            if (rangeData.values && rangeData.values.length > 1) {
+                if (!headerRow) {
+                    headerRow = rangeData.values[0];
+                    console.log("Excel headers:", headerRow);
+                }
+                // Skip header row, add data rows
+                for (let i = 1; i < rangeData.values.length; i++) {
+                    if (rangeData.values[i].some(cell => cell !== null && cell !== '')) {
+                        allRows.push(rangeData.values[i]);
+                    }
+                }
+            }
         }
-        
+
+        if (allRows.length > 0) {
+            const parsed = parseExcelToEmployees(headerRow, allRows);
+            if (parsed.length > 0) {
+                window.employeesData = parsed;
+                isCloudData = true;
+                statusDiv.textContent = `Conectado (${parsed.length} registros da nuvem)`;
+                statusDiv.style.color = 'var(--lt-brand)';
+                renderApp();
+            } else {
+                statusDiv.textContent = 'Planilha sem dados válidos. Usando dados locais.';
+                statusDiv.style.color = 'var(--neon-pink)';
+            }
+        } else {
+            statusDiv.textContent = 'Planilha vazia. Usando dados locais.';
+            statusDiv.style.color = 'var(--neon-pink)';
+        }
+
     } catch (err) {
         console.error("Graph API Error:", err);
         statusDiv.textContent = 'Falha ao sincronizar. Usando dados locais.';
         statusDiv.style.color = 'var(--neon-pink)';
-        renderApp();
+        // Don't overwrite data — keep whatever was loaded
     }
 }
 
-function parseExcelToEmployees(rows) {
-    // Basic heuristic parser: mapping the typical columns we've seen
-    // Columns might differ, but assuming standard format:
-    // [ID, Nome, Cargo, Origem, Empresa, Mes, Base, Insalub, Extra, INSS, FGTS, Transp, Adiant, Total]
-    
-    // We expect the first row to be headers
+function parseExcelToEmployees(headers, rows) {
+    // Dynamically detect column indices by matching header names
+    const h = headers.map(col => String(col || '').toLowerCase().trim());
+
+    function findCol(...keywords) {
+        return h.findIndex(header => keywords.some(kw => header.includes(kw)));
+    }
+
+    const colMap = {
+        id:             findCol('id', 'código', 'codigo', 'matrícula', 'matricula', 'registro'),
+        nome:           findCol('nome', 'colaborador', 'funcionário', 'funcionario'),
+        cargo:          findCol('cargo', 'função', 'funcao', 'posição'),
+        origem:         findCol('origem', 'setor', 'departamento', 'depto'),
+        empresa:        findCol('empresa', 'companhia', 'razão', 'cnpj'),
+        mes:            findCol('mês', 'mes', 'competência', 'competencia', 'período'),
+        salario_base:   findCol('salário base', 'salario base', 'sal. base', 'salário', 'salario', 'base'),
+        insalubridade:  findCol('insalubridade', 'insalub', 'adicional insalub'),
+        hora_extra:     findCol('hora extra', 'h. extra', 'he', 'horas extras', 'hora_extra'),
+        inss:           findCol('inss'),
+        fgts:           findCol('fgts'),
+        transporte:     findCol('transporte', 'vale transporte', 'vt', 'vale transp'),
+        adiantamento:   findCol('adiantamento', 'adiant', 'antecipação'),
+        total:          findCol('total', 'custo total', 'valor total', 'líquido', 'bruto')
+    };
+
+    console.log("Column mapping:", colMap);
+    console.log("Headers:", headers);
+
     const newEmployees = [];
-    
-    for (let i = 1; i < rows.length; i++) {
-        const row = rows[i];
-        if (!row[0]) continue; // Skip empty rows
-        
-        // Map based on the structure we created in data.js
-        // If the user's Excel column order is different, they'll need to adjust this.
+
+    for (const row of rows) {
+        // Skip rows without a name
+        const nome = colMap.nome >= 0 ? row[colMap.nome] : null;
+        if (!nome || String(nome).trim() === '') continue;
+
         newEmployees.push({
-             id: row[0],
-             nome: row[1],
-             cargo: row[2],
-             origem: row[3] || '—',
-             empresa: row[4] || 'N/A',
-             mes: row[5] || 'Desconhecido',
-             salario_base: parseMoney(row[6]),
-             insalubridade: parseMoney(row[7]),
-             hora_extra: parseMoney(row[8]),
-             inss: parseMoney(row[9]),
-             fgts: parseMoney(row[10]),
-             transporte: parseMoney(row[11]),
-             adiantamento: parseMoney(row[12]),
-             total: parseMoney(row[13])
+            id:             colMap.id >= 0 ? String(row[colMap.id] || '') : '',
+            nome:           String(nome),
+            cargo:          colMap.cargo >= 0 ? String(row[colMap.cargo] || '') : '',
+            origem:         colMap.origem >= 0 ? String(row[colMap.origem] || '—') : '—',
+            empresa:        colMap.empresa >= 0 ? String(row[colMap.empresa] || 'N/A') : 'N/A',
+            mes:            colMap.mes >= 0 ? String(row[colMap.mes] || 'Desconhecido') : 'Desconhecido',
+            salario_base:   colMap.salario_base >= 0 ? parseMoney(row[colMap.salario_base]) : 0,
+            insalubridade:  colMap.insalubridade >= 0 ? parseMoney(row[colMap.insalubridade]) : 0,
+            hora_extra:     colMap.hora_extra >= 0 ? parseMoney(row[colMap.hora_extra]) : 0,
+            inss:           colMap.inss >= 0 ? parseMoney(row[colMap.inss]) : 0,
+            fgts:           colMap.fgts >= 0 ? parseMoney(row[colMap.fgts]) : 0,
+            transporte:     colMap.transporte >= 0 ? parseMoney(row[colMap.transporte]) : 0,
+            adiantamento:   colMap.adiantamento >= 0 ? parseMoney(row[colMap.adiantamento]) : 0,
+            total:          colMap.total >= 0 ? parseMoney(row[colMap.total]) : 0
         });
     }
-    
-    // Overwrite the global variable that came from data.js
-    window.employeesData = newEmployees;
+
+    console.log(`Parsed ${newEmployees.length} employees from Excel`);
+    if (newEmployees.length > 0) console.log("Sample:", newEmployees[0]);
+
+    return newEmployees;
 }
 
 // ─── FILTER LOGIC ───
